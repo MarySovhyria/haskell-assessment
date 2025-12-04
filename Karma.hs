@@ -116,6 +116,7 @@ applyAfterPlayEffects = do
     burn = do
         st <- get
         let burned = discardPile st
+        putStrLn $ "The discard pile has been burned"
         put st { discardPile = [], burnedPiles = burned : burnedPiles st }
 
 dealInitialPlayers :: [Card] -> ([Player], [Card])
@@ -304,11 +305,69 @@ chooseStartingPlayer = do
 -- Step 3 
 --------------------------------------------------------------------------------
 basicStrategySets:: State GameState Deck
+basicStrategySets = do
+    st <- get
+    let ix = currentIx st
+        player = players st !! ix
+        hd = hand player
+        fu = faceUp player
+        fd = faceDown player
+        top = case discardPile st of
+                [] -> Nothing
+                (x:_) -> Just x
+    if not (null hd) then
+        let rankGroups = groupBy (\a b -> rank a == rank b) $ sortOn rank hd
+            legalSets = filter (\g -> legalPlay top (head g)) rankGroups
+        in return $ if null legalSets 
+          then []
+        else maximumBy (comparing length) legalSets
+    else if null hd && null (drawPile st) && not (null fu) then
+        let rankGroups = groupBy (\a b -> rank a == rank b) $ sortOn rank fu
+            legalSets = filter (\g -> legalPlay top (head g)) rankGroups
+        in return $ if null legalSets 
+          then []
+        else maximumBy (comparing length) legalSets 
+    else if null hd && null (drawPile st) && null fu && not (null fd) then
+        let gen = rng st
+            (idx, newGen) = randomR (0, length fd - 1) gen
+            chosenCard = fd !! idx
+        in do
+            put st { rng = newGen } 
+            return [chosenCard]
+    else
+        return []
 
 gameLoopWithHistory :: State GameState String
+gameLoopWithHistory = do
+    st <- get
+    let alive = filter (not . isOut) (players st)
+    case alive of
+      [winner] -> return $ pName winner
+      []       -> return "No players left"
+      _        -> do
+        applyStrategy
+        gameLoopWithHistory
 
 runOneGameWithHistory :: IO ()
+runOneGameWithHistory = do
+  gen <- newStdGen
+  let deck = fullDeck
+      shuffled = shuffleDeck gen deck
+      (ps, restDeck) = dealInitialPlayers shuffled
+      startIx = findStartingPlayer ps
+      initialState = GameState
+        { players = ps
+        , currentIx = startIx
+        , drawPile = restDeck
+        , discardPile = []
+        , burnedPiles = []
+        , rng = gen
+        , finishedOrder = []
+        }
+      putStrLn $ "Starting player: " ++ player initialState !! currentIx
 
+      (winner, _finalState) = runState gameLoop initialState
+  putStrLn $ "Winner: " ++ winner
 --------------------------------------------------------------------------------
 -- Step 4 
 --------------------------------------------------------------------------------
