@@ -342,32 +342,53 @@ gameLoopWithHistory = do
     st <- get
     let alive = filter (not . isOut) (players st)
     case alive of
-      [winner] -> return $ pName winner
-      []       -> return "No players left"
-      _        -> do
-        applyStrategy
-        gameLoopWithHistory
+      [winner] -> do
+          liftIO $ putStrLn $ "Winner: " ++ pName winner
+          return $ pName winner
+      [] -> do
+          liftIO $ putStrLn "No players left"
+          return "No players left"
+      _ -> do
+          let ix = currentIx st
+              player = players st !! ix
+          liftIO $ putStrLn $ "Current player: " ++ pName player
+          liftIO $ putStrLn $ "Hand: " ++ show (hand player)
+          liftIO $ putStrLn $ "Face-up: " ++ show (faceUp player)
+          liftIO $ putStrLn $ "Face-down cards: " ++ show (length $ faceDown player)
+
+          applyStrategy
+
+          stAfter <- get
+          liftIO $ putStrLn $ "Discard pile: " ++ show (discardPile stAfter)
+
+          let playerAfter = players stAfter !! ix
+          when (isOut playerAfter) $
+              liftIO $ putStrLn $ pName playerAfter ++ " has finished!"
+
+          gameLoopWithHistory
 
 runOneGameWithHistory :: IO ()
 runOneGameWithHistory = do
-  gen <- newStdGen
-  let deck = fullDeck
-      shuffled = shuffleDeck gen deck
-      (ps, restDeck) = dealInitialPlayers shuffled
-      startIx = findStartingPlayer ps
-      initialState = GameState
-        { players = ps
-        , currentIx = startIx
-        , drawPile = restDeck
-        , discardPile = []
-        , burnedPiles = []
-        , rng = gen
-        , finishedOrder = []
-        }
-      putStrLn $ "Starting player: " ++ player initialState !! currentIx
+    gen <- newStdGen
+    let deck = fullDeck
+        shuffled = shuffleDeck gen deck
+        -- two players use basicStrategy, one uses basicStrategySets
+        (ps, restDeck) = dealInitialPlayers shuffled
+        startIx = findStartingPlayer ps
+        initialState = GameState
+            { players = ps
+            , currentIx = startIx
+            , drawPile = restDeck
+            , discardPile = []
+            , burnedPiles = []
+            , rng = gen
+            , finishedOrder = []
+            }
 
-      (winner, _finalState) = runState gameLoop initialState
-  putStrLn $ "Winner: " ++ winner
+    putStrLn $ "Starting player: " ++ pName (players initialState !! startIx)
+    _ <- runStateT gameLoopWithHistory initialState 
+    return ()
+
 --------------------------------------------------------------------------------
 -- Step 4 
 --------------------------------------------------------------------------------
